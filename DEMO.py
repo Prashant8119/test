@@ -1,140 +1,109 @@
-import numpy as np
-import pandas as pd
-import streamlit as st
-import plotly.graph_objects as go
-from sklearn.datasets import load_iris
-from sklearn.ensemble import RandomForestClassifier
+import streamlit as st 
+import numpy as np 
+
+import matplotlib.pyplot as plt
+from sklearn import datasets
 from sklearn.model_selection import train_test_split
 
+from sklearn.decomposition import PCA
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
 
-iris_data = load_iris()
-# separate the data into features and target
-features = pd.DataFrame(
-    iris_data.data, columns=iris_data.feature_names
+from sklearn.metrics import accuracy_score
+
+st.title('Streamlit Example')
+
+st.write("""
+# Explore different classifier and datasets
+Which one is the best?
+""")
+
+dataset_name = st.sidebar.selectbox(
+    'Select Dataset',
+    ('Iris', 'Breast Cancer', 'Wine')
 )
-target = pd.Series(iris_data.target)
 
-# split the data into train and test
-x_train, x_test, y_train, y_test = train_test_split(
-    features, target, test_size=0.2, stratify=target
+st.write(f"## {dataset_name} Dataset")
+
+classifier_name = st.sidebar.selectbox(
+    'Select classifier',
+    ('KNN', 'SVM', 'Random Forest')
 )
 
+def get_dataset(name):
+    data = None
+    if name == 'Iris':
+        data = datasets.load_iris()
+    elif name == 'Wine':
+        data = datasets.load_wine()
+    else:
+        data = datasets.load_breast_cancer()
+    X = data.data
+    y = data.target
+    return X, y
 
-class StreamlitApp:
+X, y = get_dataset(dataset_name)
+st.write('Shape of dataset:', X.shape)
+st.write('number of classes:', len(np.unique(y)))
 
-    def __init__(self):
-        self.model = RandomForestClassifier()
+def add_parameter_ui(clf_name):
+    params = dict()
+    if clf_name == 'SVM':
+        C = st.sidebar.slider('C', 0.01, 10.0)
+        params['C'] = C
+    elif clf_name == 'KNN':
+        K = st.sidebar.slider('K', 1, 15)
+        params['K'] = K
+    else:
+        max_depth = st.sidebar.slider('max_depth', 2, 15)
+        params['max_depth'] = max_depth
+        n_estimators = st.sidebar.slider('n_estimators', 1, 100)
+        params['n_estimators'] = n_estimators
+    return params
 
-    def train_data(self):
-        self.model.fit(x_train, y_train)
-        return self.model
+params = add_parameter_ui(classifier_name)
 
-    def construct_sidebar(self):
+def get_classifier(clf_name, params):
+    clf = None
+    if clf_name == 'SVM':
+        clf = SVC(C=params['C'])
+    elif clf_name == 'KNN':
+        clf = KNeighborsClassifier(n_neighbors=params['K'])
+    else:
+        clf = clf = RandomForestClassifier(n_estimators=params['n_estimators'], 
+            max_depth=params['max_depth'], random_state=1234)
+    return clf
 
-        cols = [col for col in features.columns]
+clf = get_classifier(classifier_name, params)
+#### CLASSIFICATION ####
 
-        st.sidebar.markdown(
-            '<p class="header-style">Iris Data Classification</p>',
-            unsafe_allow_html=True
-        )
-        sepal_length = st.sidebar.selectbox(
-            f"Select {cols[0]}",
-            sorted(features[cols[0]].unique())
-        )
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1234)
 
-        sepal_width = st.sidebar.selectbox(
-            f"Select {cols[1]}",
-            sorted(features[cols[1]].unique())
-        )
+clf.fit(X_train, y_train)
+y_pred = clf.predict(X_test)
 
-        petal_length = st.sidebar.selectbox(
-            f"Select {cols[2]}",
-            sorted(features[cols[2]].unique())
-        )
+acc = accuracy_score(y_test, y_pred)
 
-        petal_width = st.sidebar.selectbox(
-            f"Select {cols[3]}",
-            sorted(features[cols[3]].unique())
-        )
-        values = [sepal_length, sepal_width, petal_length, petal_width]
+st.write(f'Classifier = {classifier_name}')
+st.write(f'Accuracy =', acc)
 
-        return values
+#### PLOT DATASET ####
+# Project the data onto the 2 primary principal components
+pca = PCA(2)
+X_projected = pca.fit_transform(X)
 
-    def plot_pie_chart(self, probabilities):
-        fig = go.Figure(
-            data=[go.Pie(
-                    labels=list(iris_data.target_names),
-                    values=probabilities[0]
-            )]
-        )
-        fig = fig.update_traces(
-            hoverinfo='label+percent',
-            textinfo='value',
-            textfont_size=15
-        )
-        return fig
+x1 = X_projected[:, 0]
+x2 = X_projected[:, 1]
 
-    def construct_app(self):
+fig = plt.figure()
+plt.scatter(x1, x2,
+        c=y, alpha=0.8,
+        cmap='viridis')
 
-        self.train_data()
-        values = self.construct_sidebar()
+plt.xlabel('Principal Component 1')
+plt.ylabel('Principal Component 2')
+plt.colorbar()
 
-        values_to_predict = np.array(values).reshape(1, -1)
-
-        prediction = self.model.predict(values_to_predict)
-        prediction_str = iris_data.target_names[prediction[0]]
-        probabilities = self.model.predict_proba(values_to_predict)
-
-        st.markdown(
-            """
-            <style>
-            .header-style {
-                font-size:25px;
-                font-family:sans-serif;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-        st.markdown(
-            """
-            <style>
-            .font-style {
-                font-size:20px;
-                font-family:sans-serif;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            '<p class="header-style"> Iris Data Predictions </p>',
-            unsafe_allow_html=True
-        )
-
-        column_1, column_2 = st.beta_columns(2)
-        column_1.markdown(
-            f'<p class="font-style" >Prediction </p>',
-            unsafe_allow_html=True
-        )
-        column_1.write(f"{prediction_str}")
-
-        column_2.markdown(
-            '<p class="font-style" >Probability </p>',
-            unsafe_allow_html=True
-        )
-        column_2.write(f"{probabilities[0][prediction[0]]}")
-
-        fig = self.plot_pie_chart(probabilities)
-        st.markdown(
-            '<p class="font-style" >Probability Distribution</p>',
-            unsafe_allow_html=True
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        return self
-
-
-sa = StreamlitApp()
-sa.construct_app()
+#plt.show()
+st.pyplot(fig)
